@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chatroom</title>
+    <script src="https://cdn.scaledrone.com/scaledrone.min.js"></script>
+  </head>
+  <body>
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <script
+          type="text/javascript"
+          src="https://cdn.scaledrone.com/scaledrone.min.js"
+        ></script>
+        <!--<script type='text/javascript' src='http://0.0.0.0:8080/scaledrone.js'></script>-->
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width" />
+        <style>
+          body {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 13px;
+            max-height: 100vh;
+            font-family: "TeX Gyre Adventor";
+            background-color: hsl(0, 0%, 90%);
+            display: flex;
+            align-items: center;
+            flex-direction: column;
+          }
+
+          .members-count,
+          .members-list,
+          .messages {
+            border: 1px solid #e4e4e4;
+            padding: 15px;
+            margin-bottom: 15px;
+          }
+
+          .messages {
+            width: 50%;
+            margin: 30px auto;
+            overflow: auto;
+            background-color: whitesmoke;
+          }
+
+          .message {
+            border: 1px solid grey;
+            margin: 15px 0px;
+            padding: 5px 10px;
+          }
+          .message .member {
+            display: inline-block;
+          }
+
+          .member {
+            padding-right: 10px;
+            position: relative;
+          }
+
+          .member::after {
+            content: ":";
+          }
+
+          form {
+            text-align: center;
+          }
+
+          .message-form__input {
+            border: 1px solid #dfdfdf;
+            padding: 10px 15px;
+            font-size: 16px;
+            font-family: "TeX Gyre Adventor";
+            width: 50%;
+            display: inline-block;
+          }
+
+          .message-form__button {
+            padding: 10px;
+            border: 0;
+            margin: 10px;
+            width: 70px;
+            font-family: "TeX Gyre Adventor";
+            background-color: aquamarine;
+          }
+          .message-form__button:hover {
+            color: white;
+            background-color: grey;
+          }
+        </style>
+      </head>
+      <body>
+
+        <h1>A chatroom</h1>
+
+        <div class="members-count">-</div>
+        <div class="members-list">-</div>
+        <div class="messages"></div>
+        <form class="message-form" onsubmit="return false;">
+          <input
+            class="message-form__input"
+            placeholder="Type a message.."
+            type="text"
+          />
+          <input class="message-form__button" value="Send" type="submit" />
+        </form>
+        <script src="./script.js"></script>
+      </body>
+    </html>
+
+    <script>
+      let members = [];
+
+      const CHANNEL_ID = "EGxtN4lWgBhOoAEP";
+      const drone = new ScaleDrone(CHANNEL_ID, {
+        data: {
+          // Will be sent out as clientData via events
+          name: getRandomName(),
+          color: getRandomColor(),
+        },
+      });
+
+      function getRandomName() {
+        user_name = prompt("Enter your name");
+        return user_name;
+      }
+
+      function getRandomColor() {
+        return "#000000";
+      }
+
+      drone.on("open", (error) => {
+        if (error) {
+          return console.error(error);
+        }
+        console.log("Successfully connected to Scaledrone");
+
+        const room = drone.subscribe("observable-room");
+        room.on("open", (error) => {
+          if (error) {
+            return console.error(error);
+          }
+          console.log("Successfully joined room");
+        });
+
+        // List of currently online members, emitted once
+        room.on("members", (m) => {
+          members = m;
+          // updateMembersDOM(); uncomment later
+        });
+
+        // User joined the room
+        room.on("member_join", (member) => {
+          members.push(member);
+          // updateMembersDOM(); uncomment later
+        });
+
+        // User left the room
+        room.on("member_leave", ({ id }) => {
+          const index = members.findIndex((member) => member.id === id);
+          members.splice(index, 1);
+          updateMembersDOM();
+        });
+
+        // Add this after 'member_leave' event
+        room.on("data", (text, member) => {
+          if (member) {
+            addMessageToListDOM(text, member);
+          } else {
+            // Message is from server
+          }
+        });
+      });
+
+      const DOM = {
+        membersCount: document.querySelector(".members-count"),
+        membersList: document.querySelector(".members-list"),
+        messages: document.querySelector(".messages"),
+        input: document.querySelector(".message-form__input"),
+        form: document.querySelector(".message-form"),
+      };
+
+      function createMemberElement(member) {
+        const { name, color } = member.clientData;
+        const el = document.createElement("div");
+        el.appendChild(document.createTextNode(name));
+        el.className = "member";
+        el.style.color = color;
+        return el;
+      }
+
+      function updateMembersDOM() {
+        DOM.membersCount.innerText = `${members.length} users in room:`;
+        DOM.membersList.innerHTML = "";
+        members.forEach((member) =>
+          DOM.membersList.appendChild(createMemberElement(member))
+        );
+      }
+
+      function createMessageElement(text, member) {
+        const el = document.createElement("div");
+        el.appendChild(createMemberElement(member));
+        el.appendChild(document.createTextNode(text));
+        el.className = "message";
+        return el;
+      }
+
+      function addMessageToListDOM(text, member) {
+        const el = DOM.messages;
+        const wasTop = el.scrollTop === el.scrollHeight - el.clientHeight;
+        el.appendChild(createMessageElement(text, member));
+        if (wasTop) {
+          el.scrollTop = el.scrollHeight - el.clientHeight;
+        }
+      }
+
+      DOM.form.addEventListener("submit", sendMessage);
+
+      function sendMessage() {
+        const value = DOM.input.value;
+        if (value === "") {
+          return;
+        }
+        DOM.input.value = "";
+        drone.publish({
+          room: "observable-room",
+          message: value,
+        });
+      }
+    </script>
+  </body>
+</html>
